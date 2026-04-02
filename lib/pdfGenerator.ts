@@ -1,167 +1,301 @@
-import PDFDocument from 'pdfkit';
-import { IInvoice } from './models/Invoice';
-import { fmt, formatDate, numberToWords } from './utils';
+// lib/pdfGenerator.ts
+
+import PDFDocument from "pdfkit";
+import { IInvoice } from "./models/Invoice";
+import { fmt, formatDate, numberToWords } from "./utils";
 
 export async function generateInvoicePDF(invoice: IInvoice): Promise<Buffer> {
   return new Promise((resolve, reject) => {
-    const doc = new PDFDocument({ margin: 30, size: 'A4' });
-    const chunks: Buffer[] = [];
+    try {
+      const doc = new PDFDocument({ margin: 30, size: "A4" });
+      const chunks: Buffer[] = [];
 
-    doc.on('data', (chunk: Buffer) => chunks.push(chunk));
-    doc.on('end', () => resolve(Buffer.concat(chunks)));
-    doc.on('error', reject);
+      doc.on("data", (chunk: Buffer) => chunks.push(chunk));
+      doc.on("end", () => resolve(Buffer.concat(chunks)));
+      doc.on("error", (err) => reject(err));
 
-    // Layout Constants
-    const pageWidth = doc.page.width;
-    const margin = 30;
-    const contentWidth = pageWidth - 2 * margin;
+      // Layout Constants
+      const pageWidth = doc.page.width;
+      const margin = 30;
+      const contentWidth = pageWidth - 2 * margin;
 
-    // Header
-    doc.fontSize(16).font('Helvetica-Bold').text('INVOICE', { align: 'center' });
-    doc.moveDown(0.5);
+      // ─── Header ───
+      doc
+        .fontSize(16)
+        .font("Helvetica-Bold")
+        .text("INVOICE", margin, 30, { align: "center", width: contentWidth });
+      doc.moveDown(0.5);
 
-    // Company & Meta Info Box (Bordered)
-    const topRowY = doc.y;
-    const leftColWidth = contentWidth * 0.55;
-    const rightColWidth = contentWidth * 0.45;
-    const rowHeight = 70;
+      // ─── Top Info Box ───
+      const topRowY = doc.y;
+      const leftColWidth = contentWidth * 0.55;
+      const rightColWidth = contentWidth * 0.45;
+      const rowHeight = 90; // Increased to prevent overflow
 
-    doc.rect(margin, topRowY, leftColWidth, rowHeight).stroke();
-    doc.rect(margin + leftColWidth, topRowY, rightColWidth, rowHeight).stroke();
+      // Draw borders
+      doc.rect(margin, topRowY, leftColWidth, rowHeight).stroke();
+      doc
+        .rect(margin + leftColWidth, topRowY, rightColWidth, rowHeight)
+        .stroke();
 
-    // Left Column: Bill From
-    doc.font('Helvetica-Bold').fontSize(10).text(invoice.companyName || '', margin + 5, topRowY + 5);
-    doc.font('Helvetica').fontSize(8).text(invoice.companyAddr || '', margin + 5, topRowY + 18, { width: leftColWidth - 10 });
-    doc.moveDown(0.5);
-    doc.font('Helvetica').fontSize(8).text('Supplier (Bill from):', margin + 5, doc.y);
-    doc.font('Helvetica-Bold').fontSize(9).text(invoice.supplierName || '', margin + 5, doc.y);
-    doc.font('Helvetica').fontSize(8).text((invoice.supplierAddr || '') + ', ' + (invoice.supplierState || ''), margin + 5, doc.y);
+      // Left Column: Bill From
+      let ly = topRowY + 5;
+      doc
+        .font("Helvetica-Bold")
+        .fontSize(10)
+        .text(invoice.companyName || "", margin + 5, ly, {
+          width: leftColWidth - 10,
+        });
+      ly += 14;
+      doc
+        .font("Helvetica")
+        .fontSize(8)
+        .text(invoice.companyAddr || "", margin + 5, ly, {
+          width: leftColWidth - 10,
+        });
+      ly += 20;
+      doc
+        .font("Helvetica")
+        .fontSize(8)
+        .text("Supplier (Bill from):", margin + 5, ly);
+      ly += 10;
+      doc
+        .font("Helvetica-Bold")
+        .fontSize(9)
+        .text(invoice.supplierName || "", margin + 5, ly);
+      ly += 12;
+      doc
+        .font("Helvetica")
+        .fontSize(8)
+        .text(
+          (invoice.supplierAddr || "") + ", " + (invoice.supplierState || ""),
+          margin + 5,
+          ly,
+          { width: leftColWidth - 10 },
+        );
 
-    // Right Column: Meta Details
-    let ry = topRowY + 5;
-    const labelX = margin + leftColWidth + 5;
-    const valueX = labelX + 60;
-    const valueX2 = valueX + 50;
+      // Right Column: Meta Details
+      let ry = topRowY + 5;
+      const labelX = margin + leftColWidth + 5;
+      const rightInnerWidth = rightColWidth - 10;
+      const halfRight = rightInnerWidth / 2;
 
-    doc.font('Helvetica').fontSize(8);
-    doc.text('Invoice No.', labelX, ry);
-    doc.font('Helvetica-Bold').text(invoice.invNo || '', valueX, ry);
-    doc.font('Helvetica').text('Dated', valueX2, ry);
-    doc.font('Helvetica-Bold').text(formatDate(invoice.date), valueX2 + 30, ry);
-    
-    ry += 12;
-    doc.font('Helvetica').text('Supplier Inv No.', labelX, ry);
-    doc.text(String(invoice.supplierInvRef || '—'), labelX, ry + 10);
-    doc.text('Other Reference', valueX2, ry);
-    doc.text(String(invoice.otherRef || '—'), valueX2, ry + 10);
+      doc.font("Helvetica").fontSize(8);
 
-    ry += 24;
-    doc.text('Troll No.', labelX, ry);
-    doc.font('Helvetica-Bold').text(String(invoice.trollNo || '—'), valueX, ry);
-    doc.font('Helvetica').text('Kata Slip', valueX2, ry);
-    doc.font('Helvetica-Bold').text(String(invoice.kataSlipNo || '—'), valueX2 + 30, ry);
+      // Row 1: Invoice No & Date
+      doc.text("Invoice No.", labelX, ry);
+      doc.font("Helvetica-Bold").text(invoice.invNo || "", labelX + 55, ry);
+      doc.font("Helvetica").text("Dated", labelX + halfRight, ry);
+      doc
+        .font("Helvetica-Bold")
+        .text(formatDate(invoice.date), labelX + halfRight + 30, ry);
 
-    doc.y = topRowY + rowHeight;
-    doc.moveDown(0.5);
+      // Row 2: Supplier Inv & Other Ref
+      ry += 18;
+      doc.font("Helvetica").text("Supplier Inv No.", labelX, ry);
+      doc.text(String(invoice.supplierInvRef || "—"), labelX, ry + 10);
+      doc.text("Other Ref", labelX + halfRight, ry);
+      doc.text(String(invoice.otherRef || "—"), labelX + halfRight, ry + 10);
 
-    // Main Table
-    const tableTop = doc.y;
-    const colWidths = [15, 85, 30, 45, 40, 45, 30, 40, 30, 40, 50, 70];
-    const headers = ['SI', 'Description', 'Bag', 'Qty', 'Rate', 'NetWt', 'S%', 'S-Ded', 'M%', 'M-Ded', 'F-Net', 'Amt'];
-    
-    // Header row
-    doc.font('Helvetica-Bold').fontSize(8);
-    let currentX = margin;
-    headers.forEach((h, i) => {
-      doc.rect(currentX, tableTop, colWidths[i], 15).fillAndStroke('#eeeeee', '#000000');
-      doc.fillColor('#000000').text(h, currentX, tableTop + 4, { width: colWidths[i], align: 'center' });
-      currentX += colWidths[i];
-    });
+      // Row 3: Troll No & Kata Slip
+      ry += 28;
+      doc.text("Troll No.", labelX, ry);
+      doc
+        .font("Helvetica-Bold")
+        .text(String(invoice.trollNo || "—"), labelX + 55, ry);
+      doc.font("Helvetica").text("Kata Slip", labelX + halfRight, ry);
+      doc
+        .font("Helvetica-Bold")
+        .text(String(invoice.kataSlipNo || "—"), labelX + halfRight + 45, ry);
 
-    // Content row
-    let currentY = tableTop + 15;
-    doc.font('Helvetica').fontSize(8);
-    
-    const qtyVal = parseFloat(String(invoice.quantity || 0));
-    const rateVal = parseFloat(String(invoice.rate || 0));
-    const nwVal = parseFloat(String(invoice.netWeight || qtyVal || 0));
-    const fnqVal = parseFloat(String(invoice.finalNetQty || nwVal || 0));
-    
-    const qtyStr = qtyVal.toLocaleString('en-IN');
-    const rateStr = rateVal.toFixed(2);
-    const nwStr = nwVal.toLocaleString('en-IN');
-    const fnqStr = fnqVal.toLocaleString('en-IN');
-    const grossStr = fmt(invoice.gross);
+      // ─── Main Table ───
+      const tableTop = topRowY + rowHeight + 10;
+      const colWidths = [15, 85, 30, 45, 40, 45, 30, 40, 30, 40, 50, 70];
+      const headers = [
+        "SI",
+        "Description",
+        "Bag",
+        "Qty",
+        "Rate",
+        "NetWt",
+        "S%",
+        "S-Ded",
+        "M%",
+        "M-Ded",
+        "F-Net",
+        "Amt",
+      ];
 
-    const rowData = [
-      '1', 
-      invoice.commodity, 
-      String(invoice.totalBags), 
-      qtyStr, 
-      rateStr, 
-      nwStr, 
-      String(invoice.standPercent || 0),
-      String(invoice.standDedQty || 0), 
-      String(invoice.moisPercent || 0),
-      String(invoice.moisDedQty || 0),
-      fnqStr,
-      grossStr
-    ];
-
-    currentX = margin;
-    rowData.forEach((data, i) => {
-      doc.rect(currentX, currentY, colWidths[i], 20).stroke();
-      doc.text(data, currentX + 2, currentY + 6, { width: colWidths[i] - 4, align: i > 1 ? 'right' : 'left' });
-      currentX += colWidths[i];
-    });
-    currentY += 20;
-
-    // Deduction Rows
-    invoice.deductions.forEach(d => {
-      currentX = margin;
-      const dData = ['', '  Less: ' + d.desc, String(d.bags), '', String(d.rate), '', '', '', '', '', '', '(-) ' + fmt(d.amt)];
-      dData.forEach((data, i) => {
-        doc.rect(currentX, currentY, colWidths[i], 15).stroke();
-        if (i === 1) doc.font('Helvetica-Oblique').fillColor('#aa0000');
-        doc.text(data, currentX + 2, currentY + 4, { width: colWidths[i] - 4, align: i === 1 ? 'left' : 'right' });
-        doc.fillColor('#000000').font('Helvetica');
+      // Header row
+      doc.font("Helvetica-Bold").fontSize(7);
+      let currentX = margin;
+      headers.forEach((h, i) => {
+        doc
+          .save()
+          .rect(currentX, tableTop, colWidths[i], 15)
+          .fill("#eeeeee")
+          .restore();
+        doc.rect(currentX, tableTop, colWidths[i], 15).stroke();
+        doc.fillColor("#000000").text(h, currentX + 1, tableTop + 4, {
+          width: colWidths[i] - 2,
+          align: "center",
+        });
         currentX += colWidths[i];
       });
-      currentY += 15;
-    });
 
-    // Total Row
-    currentX = margin;
-    const totalData = ['', 'TOTAL', String(invoice.totalBags), qtyStr, '', '', '', '', '', '', fnqStr, '₹ ' + fmt(invoice.netTotal)];
-    totalData.forEach((data, i) => {
-      doc.rect(currentX, currentY, colWidths[i], 20).fillAndStroke('#f0f8f4', '#000000');
-      doc.fillColor('#000000').font('Helvetica-Bold').text(data, currentX + 2, currentY + 6, { width: colWidths[i] - 4, align: i > 1 ? 'right' : (i === 1 ? 'center' : 'left') });
-      currentX += colWidths[i];
-    });
-    currentY += 20;
+      // Data row
+      let currentY = tableTop + 15;
+      doc.font("Helvetica").fontSize(8);
 
-    // Footer Info
-    doc.moveDown(1);
-    const footerY = doc.y;
-    const footerCol1Width = contentWidth * 0.6;
-    const footerCol2Width = contentWidth * 0.4;
+      const qtyVal = parseFloat(String(invoice.quantity || 0));
+      const rateVal = parseFloat(String(invoice.rate || 0));
+      const nwVal = parseFloat(String(invoice.netWeight || qtyVal || 0));
+      const fnqVal = parseFloat(String(invoice.finalNetQty || nwVal || 0));
 
-    doc.rect(margin, footerY, footerCol1Width, 80).stroke();
-    doc.rect(margin + footerCol1Width, footerY, footerCol2Width, 80).stroke();
+      const rowData = [
+        "1",
+        invoice.commodity || "",
+        String(invoice.totalBags || ""),
+        qtyVal.toLocaleString("en-IN"),
+        rateVal.toFixed(2),
+        nwVal.toLocaleString("en-IN"),
+        String(invoice.standPercent || 0),
+        String(invoice.standDedQty || 0),
+        String(invoice.moisPercent || 0),
+        String(invoice.moisDedQty || 0),
+        fnqVal.toLocaleString("en-IN"),
+        fmt(invoice.gross),
+      ];
 
-    doc.font('Helvetica-Bold').fontSize(8).text('Amount Chargeable (in words)', margin + 5, footerY + 5);
-    doc.font('Helvetica-Oblique').text('INR ' + numberToWords(Math.round(Math.max(0, invoice.netTotal))), margin + 5, footerY + 15);
+      currentX = margin;
+      rowData.forEach((data, i) => {
+        doc.rect(currentX, currentY, colWidths[i], 20).stroke();
+        doc.fillColor("#000000").text(data, currentX + 2, currentY + 6, {
+          width: colWidths[i] - 4,
+          align: i > 1 ? "right" : "left",
+        });
+        currentX += colWidths[i];
+      });
+      currentY += 20;
 
-    doc.font('Helvetica-Bold').text('Party Bank Details', margin + 5, footerY + 40);
-    doc.font('Helvetica').text(`Bank Name: ${invoice.bankName || '—'}`, margin + 5, footerY + 50);
-    doc.font('Helvetica').text(`A/C No.: ${invoice.bankAc || '—'}`, margin + 5, footerY + 60);
-    doc.font('Helvetica').text(`IFSC Code: ${invoice.bankIfsc || '—'}`, margin + 5, footerY + 70);
+      // Deduction Rows
+      if (invoice.deductions && invoice.deductions.length > 0) {
+        invoice.deductions.forEach((d) => {
+          currentX = margin;
+          const dData = [
+            "",
+            "  Less: " + d.desc,
+            String(d.bags || ""),
+            "",
+            String(d.rate || ""),
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "(-) " + fmt(d.amt),
+          ];
+          dData.forEach((data, i) => {
+            doc.rect(currentX, currentY, colWidths[i], 15).stroke();
+            if (i === 1) {
+              doc.font("Helvetica-Oblique").fillColor("#aa0000");
+            }
+            doc.text(data, currentX + 2, currentY + 4, {
+              width: colWidths[i] - 4,
+              align: i === 1 ? "left" : "right",
+            });
+            doc.fillColor("#000000").font("Helvetica");
+            currentX += colWidths[i];
+          });
+          currentY += 15;
+        });
+      }
 
-    // Signature Area
-    const sigX = margin + footerCol1Width + 5;
-    doc.font('Helvetica').fontSize(7).text(`for ${invoice.supplierName || ''}`, sigX, footerY + 5, { align: 'right', width: footerCol2Width - 10 });
-    doc.fontSize(8).text('Authorised Signatory', sigX, footerY + 65, { align: 'right', width: footerCol2Width - 10 });
+      // Total Row
+      currentX = margin;
+      const totalData = [
+        "",
+        "TOTAL",
+        String(invoice.totalBags || ""),
+        qtyVal.toLocaleString("en-IN"),
+        "",
+        "",
+        "",
+        "",
+        "",
+        "",
+        fnqVal.toLocaleString("en-IN"),
+        "Rs. " + fmt(invoice.netTotal),
+      ];
+      totalData.forEach((data, i) => {
+        doc
+          .save()
+          .rect(currentX, currentY, colWidths[i], 20)
+          .fill("#f0f8f4")
+          .restore();
+        doc.rect(currentX, currentY, colWidths[i], 20).stroke();
+        doc
+          .fillColor("#000000")
+          .font("Helvetica-Bold")
+          .fontSize(8)
+          .text(data, currentX + 2, currentY + 6, {
+            width: colWidths[i] - 4,
+            align: i > 1 ? "right" : i === 1 ? "center" : "left",
+          });
+        currentX += colWidths[i];
+      });
+      currentY += 20;
 
-    doc.end();
+      // ─── Footer ───
+      const footerY = currentY + 15;
+      const footerCol1Width = contentWidth * 0.6;
+      const footerCol2Width = contentWidth * 0.4;
+
+      doc.rect(margin, footerY, footerCol1Width, 80).stroke();
+      doc.rect(margin + footerCol1Width, footerY, footerCol2Width, 80).stroke();
+
+      doc
+        .font("Helvetica-Bold")
+        .fontSize(8)
+        .text("Amount Chargeable (in words)", margin + 5, footerY + 5);
+      doc
+        .font("Helvetica-Oblique")
+        .text(
+          "INR " + numberToWords(Math.round(Math.max(0, invoice.netTotal))),
+          margin + 5,
+          footerY + 18,
+          { width: footerCol1Width - 10 },
+        );
+
+      doc
+        .font("Helvetica-Bold")
+        .text("Party Bank Details", margin + 5, footerY + 38);
+      doc
+        .font("Helvetica")
+        .fontSize(7)
+        .text(`Bank: ${invoice.bankName || "—"}`, margin + 5, footerY + 50);
+      doc.text(`A/C No.: ${invoice.bankAc || "—"}`, margin + 5, footerY + 60);
+      doc.text(`IFSC: ${invoice.bankIfsc || "—"}`, margin + 5, footerY + 70);
+
+      // Signature
+      const sigX = margin + footerCol1Width + 5;
+      doc
+        .font("Helvetica")
+        .fontSize(7)
+        .text(`for ${invoice.supplierName || ""}`, sigX, footerY + 5, {
+          align: "right",
+          width: footerCol2Width - 10,
+        });
+      doc.fontSize(8).text("Authorised Signatory", sigX, footerY + 65, {
+        align: "right",
+        width: footerCol2Width - 10,
+      });
+
+      // Finalize
+      doc.end();
+    } catch (err) {
+      reject(err);
+    }
   });
 }

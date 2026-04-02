@@ -39,9 +39,8 @@ export async function GET(
   try {
     const pdfBuffer = await generateInvoicePDF(invoice);
 
-    // Using new Uint8Array(pdfBuffer) as any for the body ensures windows compatibility
-    // and satisfies the NextResponse body type requirement.
-    return new NextResponse(new Uint8Array(pdfBuffer), {
+    // Using new Uint8Array(pdfBuffer) satisfies the Response body type requirement
+    return new Response(new Uint8Array(pdfBuffer), {
       status: 200,
       headers: {
         "Content-Type": "application/pdf",

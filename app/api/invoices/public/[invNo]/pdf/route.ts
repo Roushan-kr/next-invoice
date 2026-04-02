@@ -1,86 +1,71 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getServerSession } from "next-auth/next";
-import PDFDocument from "pdfkit";
 import dbConnect from "@/lib/mongoose";
-import { Invoice } from "@/lib/models/Invoice";
+import { Invoice, IInvoice } from "@/lib/models/Invoice";
 import { authOptions } from "@/lib/auth";
+import { generateInvoicePDF } from "@/lib/pdfGenerator";
+
+// CRITICAL: Force Node.js runtime (not Edge) for PDFKit compatibility
+export const runtime = "nodejs";
+export const dynamic = "force-dynamic";
 
 export async function GET(
   req: NextRequest,
-  { params }: { params: Promise<{ invNo: string }> }
+  { params }: { params: Promise<{ invNo: string }> },
 ) {
-  const session = await getServerSession(authOptions);
-  if (!session || !(session.user as any)?.id) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  }
+  try {
+    const session = await getServerSession(authOptions);
+    if (!session || !(session.user as any)?.id) {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    }
 
-  const userId = (session.user as any).id;
-  const { invNo } = await params;
-  const { searchParams } = new URL(req.url);
-  const date = searchParams.get("date");
+    const userId = (session.user as any).id;
+    const { invNo } = await params;
 
-  if (!date) {
-    return NextResponse.json({ error: "Date is required" }, { status: 400 });
-  }
+    const { searchParams } = new URL(req.url);
+    const date = searchParams.get("date");
 
-  await dbConnect();
-  
-  // Find invoice matching number, date, and user
-  const invoice = await Invoice.findOne({ 
-    invNo, 
-    date, 
-    userId 
-  }).lean();
+    if (!invNo || !date) {
+      return NextResponse.json(
+        { error: "Invoice number and date are required" },
+        { status: 400 },
+      );
+    }
 
-  if (!invoice) {
-    return NextResponse.json({ error: "Invoice not found" }, { status: 404 });
-  }
+    await dbConnect();
 
-  // Generate PDF on the fly
-  const doc = new PDFDocument({ margin: 30, size: 'A4' });
-  const chunks: any[] = [];
+    // Find invoice matching number, date, and user
+    const invoice = (await Invoice.findOne({
+      invNo,
+      date,
+      userId,
+    }).lean()) as IInvoice | null;
 
-  doc.on('data', (chunk) => chunks.push(chunk));
+    if (!invoice) {
+      return NextResponse.json(
+        { error: "Invoice not found or unauthorized access" },
+        { status: 404 },
+      );
+    }
 
-  // --- PDF Content Generation (Simplified representation of the original logic) ---
-  doc.fontSize(20).text(invoice.companyName, { align: 'center' });
-  doc.fontSize(10).text(invoice.companyAddr, { align: 'center' });
-  doc.moveDown();
-  doc.fontSize(14).text(`INVOICE: ${invoice.invNo}`, { align: 'left' });
-  doc.text(`Date: ${invoice.date}`, { align: 'right' });
-  doc.moveDown();
-  doc.fontSize(12).text(`Supplier: ${invoice.supplierName}`);
-  doc.text(invoice.supplierAddr);
-  doc.text(invoice.supplierState);
-  doc.moveDown();
-  
-  // Table-like structure for items
-  doc.text('-----------------------------------------------------------');
-  doc.text(`Commodity: ${invoice.commodity}`);
-  doc.text(`Total Bags: ${invoice.totalBags}`);
-  doc.text(`Weight: ${invoice.netWeight} kg`);
-  if (invoice.standPercent > 0) doc.text(`Stand Ded: ${invoice.standPercent}% (-${invoice.standDedQty} kg)`);
-  if (invoice.moisPercent > 0) doc.text(`Mois Ded: ${invoice.moisPercent}% (-${invoice.moisDedQty} kg)`);
-  doc.text(`Final Net Qty: ${invoice.finalNetQty} kg`);
-  doc.text(`Rate: ${invoice.rate} / kg`);
-  doc.text('-----------------------------------------------------------');
-  doc.moveDown();
-  doc.fontSize(14).text(`Net Total: Rs. ${invoice.netTotal.toLocaleString()}`, { align: 'right' });
-  
-  doc.end();
+    // Capture the PDF buffer from our core generator
+    const pdfBuffer = await generateInvoicePDF(invoice);
 
-  const pdfBuffer = await new Promise<Buffer>((resolve) => {
-    doc.on('end', () => {
-      resolve(Buffer.concat(chunks));
+    // Return a direct Response with binary headers for stability
+    return new Response(new Uint8Array(pdfBuffer), {
+      status: 200,
+      headers: {
+        "Content-Type": "application/pdf",
+        "Content-Disposition": `attachment; filename="Invoice_${invoice.invNo.replace(/\s+/g, "_")}.pdf"`,
+        "Content-Length": String(pdfBuffer.length),
+        "Cache-Control": "no-store, max-age=0",
+      },
     });
-  });
-
-  return new NextResponse(new Uint8Array(pdfBuffer), {
-    status: 200,
-    headers: {
-      "Content-Type": "application/pdf",
-      "Content-Disposition": `attachment; filename="Invoice_${invoice.invNo}.pdf"`,
-      "Content-Length": String(pdfBuffer.length),
-    },
-  });
+  } catch (error) {
+    console.error("DEBUG [Protected PDF API Error]:", error);
+    return NextResponse.json(
+      { error: "Failed to generate PDF. Check server logs." },
+      { status: 500 },
+    );
+  }
 }
