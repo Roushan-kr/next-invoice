@@ -41,11 +41,12 @@ export async function GET(
 
     // Using new Uint8Array(pdfBuffer) as any for the body ensures windows compatibility
     // and satisfies the NextResponse body type requirement.
-    return new NextResponse(new Uint8Array(pdfBuffer) as any, {
+    return new NextResponse(new Uint8Array(pdfBuffer), {
       status: 200,
       headers: {
         "Content-Type": "application/pdf",
         "Content-Disposition": `attachment; filename="Invoice_${invoice.invNo || invNo}.pdf"`,
+        "Content-Length": String(pdfBuffer.length),
       },
     });
   } catch (error) {

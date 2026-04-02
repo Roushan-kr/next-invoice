@@ -58,8 +58,11 @@ export async function GET(
   doc.text('-----------------------------------------------------------');
   doc.text(`Commodity: ${invoice.commodity}`);
   doc.text(`Total Bags: ${invoice.totalBags}`);
-  doc.text(`Net Weight: ${invoice.netWeight} qtl`);
-  doc.text(`Rate: ${invoice.rate} / qtl`);
+  doc.text(`Weight: ${invoice.netWeight} kg`);
+  if (invoice.standPercent > 0) doc.text(`Stand Ded: ${invoice.standPercent}% (-${invoice.standDedQty} kg)`);
+  if (invoice.moisPercent > 0) doc.text(`Mois Ded: ${invoice.moisPercent}% (-${invoice.moisDedQty} kg)`);
+  doc.text(`Final Net Qty: ${invoice.finalNetQty} kg`);
+  doc.text(`Rate: ${invoice.rate} / kg`);
   doc.text('-----------------------------------------------------------');
   doc.moveDown();
   doc.fontSize(14).text(`Net Total: Rs. ${invoice.netTotal.toLocaleString()}`, { align: 'right' });
@@ -72,11 +75,12 @@ export async function GET(
     });
   });
 
-  return new NextResponse(new Uint8Array(pdfBuffer) as any, {
+  return new NextResponse(new Uint8Array(pdfBuffer), {
     status: 200,
     headers: {
       "Content-Type": "application/pdf",
       "Content-Disposition": `attachment; filename="Invoice_${invoice.invNo}.pdf"`,
+      "Content-Length": String(pdfBuffer.length),
     },
   });
 }

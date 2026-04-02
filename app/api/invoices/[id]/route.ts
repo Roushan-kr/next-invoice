@@ -19,14 +19,16 @@ export async function GET(
 
   await dbConnect();
   
-  // Fetch as plain JS object via .lean()
-  const invoice = (await Invoice.findOne({ id, userId }).lean()) as IInvoice | null;
-
-  if (!invoice) {
-    return NextResponse.json({ error: "Invoice not found" }, { status: 404 });
+  try {
+    const invoice = (await Invoice.findOne({ id, userId }).lean()) as IInvoice | null;
+    if (!invoice) {
+      return NextResponse.json({ error: "Invoice not found" }, { status: 404 });
+    }
+    return NextResponse.json(invoice);
+  } catch (err: any) {
+    console.error("DEBUG: Error fetching invoice:", err);
+    return NextResponse.json({ error: "Failed to fetch invoice", details: err.message }, { status: 500 });
   }
-
-  return NextResponse.json(invoice);
 }
 
 // UPDATE a specific invoice
@@ -45,18 +47,22 @@ export async function PUT(
 
   await dbConnect();
 
-  // Use Model.findOneAndUpdate to update and return the new object
-  const updatedInvoice = await Invoice.findOneAndUpdate(
-    { id, userId },
-    { ...data, userId, updatedAt: new Date() },
-    { new: true, runValidators: true }
-  ).lean();
+  try {
+    const updatedInvoice = await Invoice.findOneAndUpdate(
+      { id, userId },
+      { ...data, userId, updatedAt: new Date() },
+      { new: true, runValidators: true }
+    ).lean();
 
-  if (!updatedInvoice) {
-    return NextResponse.json({ error: "Invoice not found" }, { status: 404 });
+    if (!updatedInvoice) {
+      return NextResponse.json({ error: "Invoice not found" }, { status: 404 });
+    }
+
+    return NextResponse.json(updatedInvoice);
+  } catch (err: any) {
+    console.error("DEBUG: Error updating invoice:", err);
+    return NextResponse.json({ error: "Failed to update invoice", details: err.message }, { status: 500 });
   }
-
-  return NextResponse.json(updatedInvoice);
 }
 
 // DELETE a specific invoice

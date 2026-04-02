@@ -30,7 +30,7 @@ export default function RecordsDisplay({ initialInvoices }: RecordsDisplayProps)
 
   // Stats
   const stats = useMemo(() => {
-    const qty = filteredInvoices.reduce((s, i) => s + (Number(i.quantity || 0)), 0);
+    const qty = filteredInvoices.reduce((s, i) => s + (Number(i.finalNetQty || i.quantity || 0)), 0);
     const gross = filteredInvoices.reduce((s, i) => s + (i.gross || 0), 0);
     const net = filteredInvoices.reduce((s, i) => s + (i.netTotal || 0), 0);
     return { count: filteredInvoices.length, qty, gross, net };
@@ -124,7 +124,7 @@ export default function RecordsDisplay({ initialInvoices }: RecordsDisplayProps)
                 <td style={{ maxWidth: '200px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{inv.supplierName}</td>
                 <td><span className="badge">{inv.commodity}</span></td>
                 <td className="mono">{inv.totalBags}</td>
-                <td className="mono">{(Number(inv.quantity || 0)).toLocaleString('en-IN')}</td>
+                <td className="mono">{(Number(inv.finalNetQty || inv.quantity || 0)).toLocaleString('en-IN')}</td>
                 <td className="mono">₹{(Number(inv.rate || 0)).toFixed(2)}</td>
                 <td className="net-col">₹{fmt(inv.netTotal)}</td>
                 <td>
@@ -164,7 +164,26 @@ export default function RecordsDisplay({ initialInvoices }: RecordsDisplayProps)
                <div className="summary-box" style={{ marginBottom: '1.5rem' }}>
                   <div className="summary-row"><span className="label">Supplier</span><span className="value">{selectedInvoice.supplierName}</span></div>
                   <div className="summary-row"><span className="label">Date</span><span className="value">{formatDate(selectedInvoice.date)}</span></div>
-                  <div className="summary-row"><span className="label">Total Quantity</span><span className="value">{selectedInvoice.quantity} kg</span></div>
+                  <div className="summary-row" style={{ marginTop: '0.5rem', borderTop: '1px dashed var(--border)', paddingTop: '0.5rem' }}>
+                    <span className="label">Gross Weight</span>
+                    <span className="value">{selectedInvoice.netWeight || selectedInvoice.quantity} kg</span>
+                  </div>
+                  {selectedInvoice.standPercent > 0 && (
+                    <div className="summary-row" style={{ color: 'var(--danger)', fontSize: '0.85rem' }}>
+                      <span className="label">Stand Ded ({selectedInvoice.standPercent}%)</span>
+                      <span className="value">-{selectedInvoice.standDedQty} kg</span>
+                    </div>
+                  )}
+                  {selectedInvoice.moisPercent > 0 && (
+                    <div className="summary-row" style={{ color: 'var(--danger)', fontSize: '0.85rem' }}>
+                      <span className="label">Mois Ded ({selectedInvoice.moisPercent}%)</span>
+                      <span className="value">-{selectedInvoice.moisDedQty} kg</span>
+                    </div>
+                  )}
+                  <div className="summary-row" style={{ fontWeight: 600 }}>
+                    <span className="label">Final Net Qty</span>
+                    <span className="value">{selectedInvoice.finalNetQty} kg</span>
+                  </div>
                   <div className="summary-net"><span className="label">Net Payable</span><span className="value">₹{fmt(selectedInvoice.netTotal)}</span></div>
                </div>
                <div style={{ textAlign: 'center' }}>

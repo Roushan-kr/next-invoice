@@ -66,8 +66,8 @@ export async function generateInvoicePDF(invoice: IInvoice): Promise<Buffer> {
 
     // Main Table
     const tableTop = doc.y;
-    const colWidths = [20, 100, 40, 60, 50, 50, 40, 50, 50, 70];
-    const headers = ['SI', 'Description', 'Bag', 'Quantity', 'Rate', 'Net Wt', 'Stand%', 'S.Ded', 'Total', 'Amount'];
+    const colWidths = [15, 85, 30, 45, 40, 45, 30, 40, 30, 40, 50, 70];
+    const headers = ['SI', 'Description', 'Bag', 'Qty', 'Rate', 'NetWt', 'S%', 'S-Ded', 'M%', 'M-Ded', 'F-Net', 'Amt'];
     
     // Header row
     doc.font('Helvetica-Bold').fontSize(8);
@@ -82,23 +82,30 @@ export async function generateInvoicePDF(invoice: IInvoice): Promise<Buffer> {
     let currentY = tableTop + 15;
     doc.font('Helvetica').fontSize(8);
     
-    // Safety check for number formatting
-    const qty = (parseFloat(String(invoice.quantity || 0))).toLocaleString('en-IN') + ' kg';
-    const rate = (parseFloat(String(invoice.rate || 0))).toFixed(2);
-    const netWt = (parseFloat(String(invoice.netWeight || 0))).toLocaleString('en-IN');
-    const gross = fmt(invoice.gross);
+    const qtyVal = parseFloat(String(invoice.quantity || 0));
+    const rateVal = parseFloat(String(invoice.rate || 0));
+    const nwVal = parseFloat(String(invoice.netWeight || qtyVal || 0));
+    const fnqVal = parseFloat(String(invoice.finalNetQty || nwVal || 0));
+    
+    const qtyStr = qtyVal.toLocaleString('en-IN');
+    const rateStr = rateVal.toFixed(2);
+    const nwStr = nwVal.toLocaleString('en-IN');
+    const fnqStr = fnqVal.toLocaleString('en-IN');
+    const grossStr = fmt(invoice.gross);
 
     const rowData = [
       '1', 
       invoice.commodity, 
       String(invoice.totalBags), 
-      qty, 
-      rate, 
-      netWt, 
-      String(invoice.standDed),
-      '', 
-      netWt, 
-      gross
+      qtyStr, 
+      rateStr, 
+      nwStr, 
+      String(invoice.standPercent || 0),
+      String(invoice.standDedQty || 0), 
+      String(invoice.moisPercent || 0),
+      String(invoice.moisDedQty || 0),
+      fnqStr,
+      grossStr
     ];
 
     currentX = margin;
@@ -112,7 +119,7 @@ export async function generateInvoicePDF(invoice: IInvoice): Promise<Buffer> {
     // Deduction Rows
     invoice.deductions.forEach(d => {
       currentX = margin;
-      const dData = ['', '  Less: ' + d.desc, String(d.bags), '', String(d.rate), '', '', '', '', '(-) ' + fmt(d.amt)];
+      const dData = ['', '  Less: ' + d.desc, String(d.bags), '', String(d.rate), '', '', '', '', '', '', '(-) ' + fmt(d.amt)];
       dData.forEach((data, i) => {
         doc.rect(currentX, currentY, colWidths[i], 15).stroke();
         if (i === 1) doc.font('Helvetica-Oblique').fillColor('#aa0000');
@@ -125,7 +132,7 @@ export async function generateInvoicePDF(invoice: IInvoice): Promise<Buffer> {
 
     // Total Row
     currentX = margin;
-    const totalData = ['', 'TOTAL', String(invoice.totalBags), qty, '', '', '', '', netWt, '₹ ' + fmt(invoice.netTotal)];
+    const totalData = ['', 'TOTAL', String(invoice.totalBags), qtyStr, '', '', '', '', '', '', fnqStr, '₹ ' + fmt(invoice.netTotal)];
     totalData.forEach((data, i) => {
       doc.rect(currentX, currentY, colWidths[i], 20).fillAndStroke('#f0f8f4', '#000000');
       doc.fillColor('#000000').font('Helvetica-Bold').text(data, currentX + 2, currentY + 6, { width: colWidths[i] - 4, align: i > 1 ? 'right' : (i === 1 ? 'center' : 'left') });
@@ -143,7 +150,7 @@ export async function generateInvoicePDF(invoice: IInvoice): Promise<Buffer> {
     doc.rect(margin + footerCol1Width, footerY, footerCol2Width, 80).stroke();
 
     doc.font('Helvetica-Bold').fontSize(8).text('Amount Chargeable (in words)', margin + 5, footerY + 5);
-    doc.font('Helvetica-Oblique').text('INR ' + numberToWords(Math.round(invoice.netTotal)), margin + 5, footerY + 15);
+    doc.font('Helvetica-Oblique').text('INR ' + numberToWords(Math.round(Math.max(0, invoice.netTotal))), margin + 5, footerY + 15);
 
     doc.font('Helvetica-Bold').text('Party Bank Details', margin + 5, footerY + 40);
     doc.font('Helvetica').text(`Bank Name: ${invoice.bankName || '—'}`, margin + 5, footerY + 50);

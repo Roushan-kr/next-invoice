@@ -67,6 +67,10 @@ export default async function CreateInvoicePage({
         ...existing,
         _id: existing._id.toString(),
         date: existing.date instanceof Date ? existing.date.toISOString().split('T')[0] : existing.date,
+        deductions: existing.deductions?.map((d: any) => ({
+          ...d,
+          _id: d._id?.toString()
+        })),
       };
     }
   } else {

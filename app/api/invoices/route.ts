@@ -30,13 +30,20 @@ export async function POST(req: NextRequest) {
 
   await dbConnect();
 
-  const newInvoice = new Invoice({
-    ...data,
-    id: uuidv4(),
-    userId,
-  });
+  try {
+    const newInvoice = new Invoice({
+      ...data,
+      id: uuidv4(),
+      userId,
+    });
 
-  await newInvoice.save();
-
-  return NextResponse.json(newInvoice, { status: 201 });
+    await newInvoice.save();
+    return NextResponse.json(newInvoice, { status: 201 });
+  } catch (err: any) {
+    console.error("DEBUG: Error creating invoice:", err);
+    return NextResponse.json({ 
+      error: "Failed to create invoice", 
+      details: err.message 
+    }, { status: 500 });
+  }
 }

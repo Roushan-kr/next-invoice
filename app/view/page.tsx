@@ -27,6 +27,10 @@ export default async function ViewRecordsPage() {
     _id: inv._id.toString(),
     id: inv.id || inv._id.toString(),
     date: inv.date instanceof Date ? inv.date.toISOString().split('T')[0] : inv.date,
+    deductions: inv.deductions?.map((d: any) => ({
+      ...d,
+      _id: d._id?.toString()
+    })),
     createdAt: inv.createdAt?.toISOString(),
     updatedAt: inv.updatedAt?.toISOString(),
   })) as any as IInvoice[];

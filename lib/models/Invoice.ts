@@ -29,8 +29,13 @@ export interface IInvoice {
   quantity: number;
   rate: number;
   netWeight: number;
+  standPercent: number;
+  standDedQty: number;
   standDed: number;
+  moisPercent: number;
+  moisDedQty: number;
   moisDed: number;
+  finalNetQty: number;
   deductions: Deduction[];
   gross: number;
   otherDeduct: number;
@@ -68,8 +73,13 @@ const InvoiceSchema = new Schema<IInvoice>({
   quantity: { type: Number, required: true },
   rate: { type: Number, required: true },
   netWeight: { type: Number, required: true },
+  standPercent: { type: Number, default: 0 },
+  standDedQty: { type: Number, default: 0 },
   standDed: { type: Number, default: 0 },
+  moisPercent: { type: Number, default: 0 },
+  moisDedQty: { type: Number, default: 0 },
   moisDed: { type: Number, default: 0 },
+  finalNetQty: { type: Number, default: 0 },
   deductions: [DeductionSchema],
   gross: { type: Number, required: true },
   otherDeduct: { type: Number, default: 0 },
