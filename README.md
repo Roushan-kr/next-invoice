@@ -1,36 +1,51 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# Invoice Manager — Next.js Migration
 
-## Getting Started
+Professional, multi-user invoice management system with Gmail OAuth, MongoDB, and on-the-fly PDF generation.
 
-First, run the development server:
+## 🚀 Setup Instructions
 
-```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
+### 1. Environment Variables
+Create a `.env.local` file in the root directory with the following:
+```env
+NEXTAUTH_URL=http://localhost:3000
+NEXTAUTH_SECRET=your_nextauth_secret_here
+MONGODB_URI=your_mongodb_connection_string
+MONGODB_DB=invoice_db
+GOOGLE_CLIENT_ID=your_google_client_id
+GOOGLE_CLIENT_SECRET=your_google_client_secret
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+### 2. Google OAuth Configuration
+1. Go to [Google Cloud Console](https://console.cloud.google.com/).
+2. Create a new project.
+3. Configure **OAuth Consent Screen**.
+4. Create **OAuth 2.0 Client IDs**.
+5. Add Authorized Redirect URIs: `http://localhost:3000/api/auth/callback/google`
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+### 3. Installation
+```bash
+pnpm install
+```
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+### 4. Running Locally
+```bash
+pnpm dev
+```
 
-## Learn More
+## 🛠 Features
 
-To learn more about Next.js, take a look at the following resources:
+- **Gmail OAuth**: Secure login for multiple users.
+- **Data Isolation**: Users only see and manage their own invoices.
+- **UUID Identification**: Every invoice has a unique, secure UUID and a user-friendly invoice number.
+- **On-the-fly PDF**: Invoices are generated as PDFs using `pdfkit` (no external storage).
+- **Public Lookup**: Customers can retrieve PDFs by entering the Invoice Number and Date.
+- **Premium UI**: Replicated original glass-morphism design with vanilla CSS.
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+## 📁 Project Structure
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
-
-## Deploy on Vercel
-
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
-
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+- `app/api/auth/`: NextAuth configuration.
+- `app/api/invoices/`: CRUD and Public PDF endpoints.
+- `app/create/`: Invoice creation/editing form.
+- `app/view/`: Records dashboard with filters and stats.
+- `lib/pdfGenerator.ts`: Server-side PDF logic.
+- `lib/models/Invoice.ts`: Type definitions for MongoDB documents.
