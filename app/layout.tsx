@@ -3,7 +3,7 @@ import "./globals.css";
 import { Providers } from "@/components/Providers";
 
 export const metadata: Metadata = {
-  title: "Bhole Shankar — Invoice Manager",
+  title: "IMS — Invoice Manager",
   description: "Premium Multi-User Invoice Management System",
 };
 

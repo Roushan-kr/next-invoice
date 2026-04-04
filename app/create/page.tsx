@@ -82,9 +82,9 @@ export default async function CreateInvoicePage({
 
     initialData = {
       ...initialData,
-      companyName: profile?.companyName || "company Name",
-      companyAddr: profile?.companyAddr || "company Address",
-      supplierState: profile?.supplierState || "supplier State",
+      companyName: profile?.companyName || "",
+      companyAddr: profile?.companyAddr || "",
+      supplierState: profile?.supplierState || "",
       bankName: profile?.bankName || "",
       bankAc: profile?.bankAc || "",
       bankIfsc: profile?.bankIfsc || "",

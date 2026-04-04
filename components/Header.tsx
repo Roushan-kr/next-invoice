@@ -3,16 +3,35 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useSession, signOut } from "next-auth/react";
+import { useState, useEffect } from "react";
+import { getUserProfile } from "@/lib/actions";
 
 export default function Header() {
   const pathname = usePathname();
   const { data: session } = useSession();
+  const [companyName, setCompanyName] = useState("IMS — Invoice Manager");
+
+  useEffect(() => {
+    async function fetchProfile() {
+      if (session?.user) {
+        try {
+          const profile = await getUserProfile();
+          if (profile?.companyName) {
+            setCompanyName(profile.companyName);
+          }
+        } catch (error) {
+          console.error("Failed to fetch profile for header:", error);
+        }
+      }
+    }
+    fetchProfile();
+  }, [session]);
 
   return (
     <header className="header">
       <div className="header-brand">
         <span>IMS</span>
-        BHOLE SHANKAR TRADING CO.
+        {companyName}
       </div>
       <nav className="nav-tabs">
         {session ? (
