@@ -10,323 +10,475 @@ export async function generateInvoicePDF(invoice: IInvoice): Promise<Buffer> {
   const fontBold = await pdfDoc.embedFont(StandardFonts.HelveticaBold);
   const fontItalic = await pdfDoc.embedFont(StandardFonts.HelveticaOblique);
 
-  const page = pdfDoc.addPage([595.28, 841.89]); // A4 Size in points
+  const page = pdfDoc.addPage([595.28, 841.89]); // A4
   const { width, height } = page.getSize();
-  const margin = 30;
+  const margin = 28;
   const contentWidth = width - 2 * margin;
 
-  // Helper to convert top-down Y to bottom-up PDF Y
+  // Convert top-down Y to PDF bottom-up Y
   const ty = (y: number) => height - y;
 
-  // Helper for text alignment
-  const drawCenteredText = (text: string, y: number, fontSize: number, fontRef = fontBold) => {
-    const textWidth = fontRef.widthOfTextAtSize(text, fontSize);
+  // ── Clip-safe text draw: truncates text to fit within maxWidth ──
+  const drawText = (
+    text: string,
+    x: number,
+    y: number,
+    size: number,
+    fontRef = font,
+    color = rgb(0, 0, 0),
+    maxWidth?: number,
+  ) => {
+    if (!text) return;
+    let str = text;
+    if (maxWidth) {
+      while (
+        str.length > 1 &&
+        fontRef.widthOfTextAtSize(str, size) > maxWidth
+      ) {
+        str = str.slice(0, -1);
+      }
+    }
+    page.drawText(str, { x, y: ty(y), size, font: fontRef, color });
+  };
+
+  // Right-aligned text within a cell
+  const drawTextRight = (
+    text: string,
+    cellX: number,
+    cellWidth: number,
+    y: number,
+    size: number,
+    fontRef = font,
+    color = rgb(0, 0, 0),
+  ) => {
+    const tw = fontRef.widthOfTextAtSize(text, size);
+    const x = cellX + cellWidth - tw - 2;
+    page.drawText(text, { x, y: ty(y), size, font: fontRef, color });
+  };
+
+  // Center-aligned text within a cell
+  const drawTextCenter = (
+    text: string,
+    cellX: number,
+    cellWidth: number,
+    y: number,
+    size: number,
+    fontRef = font,
+  ) => {
+    const tw = fontRef.widthOfTextAtSize(text, size);
     page.drawText(text, {
-      x: margin + (contentWidth - textWidth) / 2,
+      x: cellX + (cellWidth - tw) / 2,
       y: ty(y),
-      size: fontSize,
+      size,
       font: fontRef,
     });
   };
 
-  // Helper for wrapped text
+  // Wrapped text – returns new Y after last line
   const drawWrappedText = (
     text: string,
     x: number,
-    y: number,
+    startY: number,
     maxWidth: number,
-    fontSize: number,
+    size: number,
     fontRef = font,
-    color = rgb(0, 0, 0)
-  ) => {
-    const words = text.split(" ");
+    color = rgb(0, 0, 0),
+    lineGap = 3,
+  ): number => {
+    const words = (text || "").split(" ");
     let line = "";
-    let currentY = y;
-
+    let y = startY;
     for (const word of words) {
-      const testLine = line + (line ? " " : "") + word;
-      const testWidth = fontRef.widthOfTextAtSize(testLine, fontSize);
-      if (testWidth > maxWidth && line) {
-        page.drawText(line, { x, y: ty(currentY), size: fontSize, font: fontRef, color });
+      const test = line ? line + " " + word : word;
+      if (fontRef.widthOfTextAtSize(test, size) > maxWidth && line) {
+        page.drawText(line, { x, y: ty(y), size, font: fontRef, color });
         line = word;
-        currentY += fontSize + 2;
+        y += size + lineGap;
       } else {
-        line = testLine;
+        line = test;
       }
     }
-    page.drawText(line, { x, y: ty(currentY), size: fontSize, font: fontRef, color });
-    return currentY + fontSize + 2;
+    if (line) page.drawText(line, { x, y: ty(y), size, font: fontRef, color });
+    return y + size + lineGap;
   };
 
-  // ─── Header ───
-  drawCenteredText("INVOICE", 45, 16, fontBold);
+  // Draw a filled+bordered rectangle
+  const rect = (
+    x: number,
+    y: number,
+    w: number,
+    h: number,
+    fillColor?: ReturnType<typeof rgb>,
+  ) => {
+    page.drawRectangle({
+      x,
+      y: ty(y + h),
+      width: w,
+      height: h,
+      ...(fillColor ? { color: fillColor } : {}),
+      borderColor: rgb(0, 0, 0),
+      borderWidth: 0.5,
+    });
+  };
 
-  // ─── Top Info Box ───
-  const topRowY = 70;
-  const leftColWidth = contentWidth * 0.55;
-  const rightColWidth = contentWidth * 0.45;
-  const rowHeight = 90;
+  // ─────────────────────────────────────────────
+  // HEADER
+  // ─────────────────────────────────────────────
+  drawTextCenter("INVOICE", margin, contentWidth, 36, 14, fontBold);
 
-  // Draw borders for top info box
-  page.drawRectangle({
-    x: margin,
-    y: ty(topRowY + rowHeight),
-    width: leftColWidth,
-    height: rowHeight,
-    borderColor: rgb(0, 0, 0),
-    borderWidth: 1,
-  });
-  page.drawRectangle({
-    x: margin + leftColWidth,
-    y: ty(topRowY + rowHeight),
-    width: rightColWidth,
-    height: rowHeight,
-    borderColor: rgb(0, 0, 0),
-    borderWidth: 1,
-  });
+  // ─────────────────────────────────────────────
+  // TOP INFO BOX
+  // ─────────────────────────────────────────────
+  const topY = 48;
+  const leftW = contentWidth * 0.56;
+  const rightW = contentWidth - leftW;
+  const boxH = 100;
 
-  // Left Column: Bill From
-  let ly = topRowY + 15;
-  page.drawText(invoice.companyName || "", {
-    x: margin + 5,
-    y: ty(ly),
-    size: 10,
-    font: fontBold,
-  });
-  ly += 14;
-  
-  // Custom wrap for company address
-  drawWrappedText(invoice.companyAddr || "", margin + 5, ly, leftColWidth - 10, 8, font);
-  
-  ly += 25;
-  page.drawText("Supplier (Bill from):", {
-    x: margin + 5,
-    y: ty(ly),
-    size: 8,
-    font: font,
-  });
-  ly += 12;
-  page.drawText(invoice.supplierName || "", {
-    x: margin + 5,
-    y: ty(ly),
-    size: 9,
-    font: fontBold,
-  });
-  ly += 12;
-  drawWrappedText(
-    (invoice.supplierAddr || "") + ", " + (invoice.supplierState || ""),
+  rect(margin, topY, leftW, boxH);
+  rect(margin + leftW, topY, rightW, boxH);
+
+  // LEFT: Company + Supplier
+  let ly = topY + 12;
+  drawText(
+    invoice.companyName || "",
     margin + 5,
     ly,
-    leftColWidth - 10,
+    10,
+    fontBold,
+    rgb(0, 0, 0),
+    leftW - 10,
+  );
+  ly += 13;
+  drawWrappedText(invoice.companyAddr || "", margin + 5, ly, leftW - 10, 8);
+  ly += 22;
+
+  drawText(
+    "Supplier (Bill from):",
+    margin + 5,
+    ly,
     8,
-    font
+    font,
+    rgb(0.3, 0.3, 0.3),
+  );
+  ly += 12;
+  drawText(
+    invoice.supplierName || "",
+    margin + 5,
+    ly,
+    9,
+    fontBold,
+    rgb(0, 0, 0),
+    leftW - 10,
+  );
+  ly += 12;
+  drawWrappedText(
+    [invoice.supplierAddr, invoice.supplierState].filter(Boolean).join(", "),
+    margin + 5,
+    ly,
+    leftW - 10,
+    8,
   );
 
-  // Right Column: Meta Details
-  let ry = topRowY + 15;
-  const labelX = margin + leftColWidth + 5;
-  const rightInnerWidth = rightColWidth - 10;
-  const halfRight = rightInnerWidth / 2;
+  // RIGHT: Meta grid — 2 columns, 4 rows
+  const rx = margin + leftW;
+  const rPad = 5;
+  const labelW = 68;
+  const valX1 = rx + rPad + labelW;
+  const col2X = rx + rightW / 2;
+  const col2ValX = col2X + labelW - 20;
 
-  // Row 1: Invoice No & Date
-  page.drawText("Invoice No.", { x: labelX, y: ty(ry), size: 8, font });
-  page.drawText(invoice.invNo || "", { x: labelX + 55, y: ty(ry), size: 8, font: fontBold });
-  page.drawText("Dated", { x: labelX + halfRight, y: ty(ry), size: 8, font });
-  page.drawText(formatDate(invoice.date), { x: labelX + halfRight + 30, y: ty(ry), size: 8, font: fontBold });
-
-  // Row 2: Supplier Inv & Other Ref
-  ry += 20;
-  page.drawText("Supplier Inv No.", { x: labelX, y: ty(ry), size: 8, font });
-  page.drawText(String(invoice.supplierInvRef || "—"), { x: labelX, y: ty(ry + 10), size: 8, font });
-  page.drawText("Other Ref", { x: labelX + halfRight, y: ty(ry), size: 8, font });
-  page.drawText(String(invoice.otherRef || "—"), { x: labelX + halfRight, y: ty(ry + 10), size: 8, font });
-
-  // Row 3: Troll No & Kata Slip
-  ry += 30;
-  page.drawText("Troll No.", { x: labelX, y: ty(ry), size: 8, font });
-  page.drawText(String(invoice.trollNo || "—"), { x: labelX + 55, y: ty(ry), size: 8, font: fontBold });
-  page.drawText("Kata Slip", { x: labelX + halfRight, y: ty(ry), size: 8, font });
-  page.drawText(String(invoice.kataSlipNo || "—"), { x: labelX + halfRight + 45, y: ty(ry), size: 8, font: fontBold });
-
-  // ─── Main Table ───
-  const tableTop = topRowY + rowHeight + 10;
-  const colWidths = [15, 85, 30, 45, 40, 45, 30, 40, 30, 40, 50, 70];
-  const headers = [
-    "SI", "Description", "Bag", "Qty", "Rate", "NetWt", "S%", "S-Ded", "M%", "M-Ded", "F-Net", "Amt",
+  const metaRows: [string, string, string, string][] = [
+    [
+      "Invoice No.",
+      String(invoice.invNo || ""),
+      "Dated",
+      formatDate(invoice.date),
+    ],
+    [
+      "Supplier Inv No.",
+      String(invoice.supplierInvRef || "—"),
+      "Other Ref",
+      String(invoice.otherRef || "—"),
+    ],
+    [
+      "Troll No.",
+      String(invoice.trollNo || "—"),
+      "Kata Slip No.",
+      String(invoice.kataSlipNo || "—"),
+    ],
   ];
 
-  // Header row
-  let currentX = margin;
-  headers.forEach((h, i) => {
-    page.drawRectangle({
-      x: currentX,
-      y: ty(tableTop + 15),
-      width: colWidths[i],
-      height: 15,
-      color: rgb(0.93, 0.93, 0.93), // #eeeeee
-      borderColor: rgb(0, 0, 0),
-      borderWidth: 1,
-    });
-    const textWidth = fontBold.widthOfTextAtSize(h, 7);
-    page.drawText(h, {
-      x: currentX + (colWidths[i] - textWidth) / 2,
-      y: ty(tableTop + 10),
-      size: 7,
-      font: fontBold,
-    });
-    currentX += colWidths[i];
-  });
+  let ry = topY + 14;
+  for (const [l1, v1, l2, v2] of metaRows) {
+    drawText(l1 + ":", rx + rPad, ry, 7.5, font, rgb(0.3, 0.3, 0.3));
+    drawText(
+      v1,
+      valX1,
+      ry,
+      8,
+      fontBold,
+      rgb(0, 0, 0),
+      rightW / 2 - rPad - labelW - 2,
+    );
+    drawText(l2 + ":", col2X + rPad, ry, 7.5, font, rgb(0.3, 0.3, 0.3));
+    drawText(
+      v2,
+      col2ValX + rPad + 2,
+      ry,
+      8,
+      fontBold,
+      rgb(0, 0, 0),
+      rightW / 2 - rPad - labelW + 10,
+    );
+    ry += 26;
+  }
 
-  // Data row
-  let currentY = tableTop + 15;
+  // ─────────────────────────────────────────────
+  // MAIN TABLE
+  // ─────────────────────────────────────────────
+  const tableTop = topY + boxH + 8;
+
+  // Column definitions: [label, width, align]
+  // Total must equal contentWidth (539 for margin=28)
+  const cols: {
+    label: string;
+    width: number;
+    align: "left" | "center" | "right";
+  }[] = [
+    { label: "SI\nNo.", width: 18, align: "center" },
+    { label: "Description\nof Goods", width: 110, align: "left" },
+    { label: "Bag", width: 32, align: "center" },
+    { label: "Quantity", width: 52, align: "right" },
+    { label: "Rate", width: 38, align: "right" },
+    { label: "Net\nWeight", width: 52, align: "right" },
+    { label: "Stand\n%", width: 28, align: "center" },
+    { label: "Stand\nDed.", width: 38, align: "right" },
+    { label: "Mois.\n%", width: 26, align: "center" },
+    { label: "Mois.\nDed.", width: 36, align: "right" },
+    { label: "Total", width: 48, align: "right" },
+    { label: "Amount", width: 61, align: "right" },
+  ];
+
+  const headerH = 26;
+  const dataRowH = 22;
+  const dedRowH = 16;
+  const totalRowH = 22;
+  const headerGray = rgb(0.88, 0.88, 0.88);
+
+  // Draw header
+  let cx = margin;
+  for (const col of cols) {
+    rect(cx, tableTop, col.width, headerH, headerGray);
+    const lines = col.label.split("\n");
+    const lineH = 8;
+    const totalTextH = lines.length * lineH + (lines.length - 1) * 2;
+    let lineY = tableTop + (headerH - totalTextH) / 2 + 8;
+    for (const line of lines) {
+      drawTextCenter(line, cx, col.width, lineY, 7, fontBold);
+      lineY += lineH + 2;
+    }
+    cx += col.width;
+  }
+
+  // Data values
   const qtyVal = parseFloat(String(invoice.quantity || 0));
   const rateVal = parseFloat(String(invoice.rate || 0));
   const nwVal = parseFloat(String(invoice.netWeight || qtyVal || 0));
   const fnqVal = parseFloat(String(invoice.finalNetQty || nwVal || 0));
 
-  const rowData = [
+  const rowValues = [
     "1",
     invoice.commodity || "",
     String(invoice.totalBags || ""),
     qtyVal.toLocaleString("en-IN"),
     rateVal.toFixed(2),
     nwVal.toLocaleString("en-IN"),
-    String(invoice.standPercent || 0),
-    String(invoice.standDedQty || 0),
-    String(invoice.moisPercent || 0),
-    String(invoice.moisDedQty || 0),
+    String(invoice.standPercent || ""),
+    String(invoice.standDedQty || ""),
+    String(invoice.moisPercent || ""),
+    String(invoice.moisDedQty || ""),
     fnqVal.toLocaleString("en-IN"),
     fmt(invoice.gross),
   ];
 
-  currentX = margin;
-  rowData.forEach((data, i) => {
-    page.drawRectangle({
-      x: currentX,
-      y: ty(currentY + 20),
-      width: colWidths[i],
-      height: 20,
-      borderColor: rgb(0, 0, 0),
-      borderWidth: 1,
-    });
-    const alignRight = i > 1;
-    const textWidth = font.widthOfTextAtSize(data, 8);
-    page.drawText(data, {
-      x: alignRight ? currentX + colWidths[i] - textWidth - 2 : currentX + 2,
-      y: ty(currentY + 13),
-      size: 8,
-      font,
-    });
-    currentX += colWidths[i];
-  });
-  currentY += 20;
+  let currentY = tableTop + headerH;
+  cx = margin;
+  for (let i = 0; i < cols.length; i++) {
+    const col = cols[i];
+    rect(cx, currentY, col.width, dataRowH);
+    const textY = currentY + dataRowH - 7;
+    const pad = 3;
+    if (col.align === "right") {
+      drawTextRight(rowValues[i], cx, col.width - pad, textY, 8);
+    } else if (col.align === "center") {
+      drawTextCenter(rowValues[i], cx, col.width, textY, 8);
+    } else {
+      drawText(
+        rowValues[i],
+        cx + pad,
+        textY,
+        8,
+        font,
+        rgb(0, 0, 0),
+        col.width - pad * 2,
+      );
+    }
+    cx += col.width;
+  }
+  currentY += dataRowH;
 
-  // Deduction Rows
+  // Deduction rows
   if (invoice.deductions && invoice.deductions.length > 0) {
-    invoice.deductions.forEach((d) => {
-      currentX = margin;
-      const dData = [
-        "", "  Less: " + d.desc, String(d.bags || ""), "", String(d.rate || ""), "", "", "", "", "", "", "(-) " + fmt(d.amt),
+    for (const d of invoice.deductions) {
+      cx = margin;
+      const dedData: (string | null)[] = [
+        null,
+        "Less: " + (d.desc || ""),
+        d.bags != null ? String(d.bags) : null,
+        null,
+        d.rate != null ? String(d.rate) : null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        "(-) " + fmt(d.amt),
       ];
-      dData.forEach((data, i) => {
-        page.drawRectangle({
-          x: currentX,
-          y: ty(currentY + 15),
-          width: colWidths[i],
-          height: 15,
-          borderColor: rgb(0, 0, 0),
-          borderWidth: 1,
-        });
-        const useItalic = i === 1;
-        const currentFont = useItalic ? fontItalic : font;
-        const color = useItalic ? rgb(0.66, 0, 0) : rgb(0, 0, 0); // #aa0000
-        const textWidth = currentFont.widthOfTextAtSize(data, 8);
-        page.drawText(data, {
-          x: i === 1 ? currentX + 2 : currentX + colWidths[i] - textWidth - 2,
-          y: ty(currentY + 10),
-          size: 8,
-          font: currentFont,
-          color,
-        });
-        currentX += colWidths[i];
-      });
-      currentY += 15;
-    });
+
+      for (let i = 0; i < cols.length; i++) {
+        const col = cols[i];
+        rect(cx, currentY, col.width, dedRowH);
+        const val = dedData[i];
+        if (val) {
+          const textY = currentY + dedRowH - 5;
+          const pad = 3;
+          if (i === 1) {
+            // Description: italic red, left-aligned, clipped
+            drawText(
+              val,
+              cx + pad,
+              textY,
+              7.5,
+              fontItalic,
+              rgb(0.65, 0, 0),
+              col.width - pad * 2,
+            );
+          } else if (i === 11) {
+            // Amount: right-aligned
+            drawTextRight(val, cx, col.width - pad, textY, 7.5, font);
+          } else if (col.align === "center") {
+            drawTextCenter(val, cx, col.width, textY, 7.5);
+          } else {
+            drawTextRight(val, cx, col.width - pad, textY, 7.5);
+          }
+        }
+        cx += col.width;
+      }
+      currentY += dedRowH;
+    }
   }
 
-  // Total Row
-  currentX = margin;
-  const totalData = [
-    "", "TOTAL", String(invoice.totalBags || ""), qtyVal.toLocaleString("en-IN"), "", "", "", "", "", "", fnqVal.toLocaleString("en-IN"), "Rs. " + fmt(invoice.netTotal),
+  // Total row
+  const totalGreen = rgb(0.92, 0.97, 0.94);
+  const totalValues: (string | null)[] = [
+    null,
+    "TOTAL",
+    String(invoice.totalBags || ""),
+    qtyVal.toLocaleString("en-IN"),
+    null,
+    nwVal.toLocaleString("en-IN"),
+    null,
+    null,
+    null,
+    null,
+    fnqVal.toLocaleString("en-IN"),
+    "Rs. " + fmt(invoice.netTotal),
   ];
-  totalData.forEach((data, i) => {
-    page.drawRectangle({
-      x: currentX,
-      y: ty(currentY + 20),
-      width: colWidths[i],
-      height: 20,
-      color: rgb(0.94, 0.97, 0.96), // #f0f8f4
-      borderColor: rgb(0, 0, 0),
-      borderWidth: 1,
-    });
-    const textWidth = fontBold.widthOfTextAtSize(data, 8);
-    let drawX = currentX + 2;
-    if (i > 1) drawX = currentX + colWidths[i] - textWidth - 2;
-    else if (i === 1) drawX = currentX + (colWidths[i] - textWidth) / 2;
 
-    page.drawText(data, {
-      x: drawX,
-      y: ty(currentY + 13),
-      size: 8,
-      font: fontBold,
-    });
-    currentX += colWidths[i];
-  });
-  currentY += 20;
+  cx = margin;
+  for (let i = 0; i < cols.length; i++) {
+    const col = cols[i];
+    rect(cx, currentY, col.width, totalRowH, totalGreen);
+    const val = totalValues[i];
+    if (val) {
+      const textY = currentY + totalRowH - 8;
+      const innerPad = 3;
+      if (i === 1) {
+        // "TOTAL" label — centred
+        drawTextCenter(val, cx, col.width, textY, 8, fontBold);
+      } else if (col.align === "right" || col.align === "center") {
+        // Right-align numeric values, clipped to cell interior
+        const maxW = col.width - innerPad * 2;
+        const tw = fontBold.widthOfTextAtSize(val, 8);
+        const x = cx + col.width - Math.min(tw, maxW) - innerPad;
+        let str = val;
+        while (str.length > 1 && fontBold.widthOfTextAtSize(str, 8) > maxW) {
+          str = str.slice(0, -1);
+        }
+        page.drawText(str, { x, y: ty(textY), size: 8, font: fontBold });
+      } else {
+        drawTextCenter(val, cx, col.width, textY, 8, fontBold);
+      }
+    }
+    cx += col.width;
+  }
+  currentY += totalRowH;
 
-  // ─── Footer ───
-  let footerY = currentY + 15;
-  const footerCol1Width = contentWidth * 0.6;
-  const footerCol2Width = contentWidth * 0.4;
+  // ─────────────────────────────────────────────
+  // FOOTER
+  // ─────────────────────────────────────────────
+  const footerY = currentY + 10;
+  const footerH = 90;
+  const footerCol1W = contentWidth * 0.62;
+  const footerCol2W = contentWidth - footerCol1W;
 
-  page.drawRectangle({
-    x: margin,
-    y: ty(footerY + 80),
-    width: footerCol1Width,
-    height: 80,
-    borderColor: rgb(0, 0, 0),
-    borderWidth: 1,
-  });
-  page.drawRectangle({
-    x: margin + footerCol1Width,
-    y: ty(footerY + 80),
-    width: footerCol2Width,
-    height: 80,
-    borderColor: rgb(0, 0, 0),
-    borderWidth: 1,
-  });
+  rect(margin, footerY, footerCol1W, footerH);
+  rect(margin + footerCol1W, footerY, footerCol2W, footerH);
 
-  page.drawText("Amount Chargeable (in words)", { x: margin + 5, y: ty(footerY + 15), size: 8, font: fontBold });
-  
-  const amountWords = "INR " + numberToWords(Math.round(Math.max(0, invoice.netTotal)));
-  drawWrappedText(amountWords, margin + 5, footerY + 28, footerCol1Width - 10, 8, fontItalic);
+  // Left footer
+  let fY = footerY + 12;
+  drawText("Amount Chargeable (in words)", margin + 5, fY, 8, fontBold);
+  fY += 13;
+  const amountWords =
+    "INR " + numberToWords(Math.round(Math.max(0, invoice.netTotal)));
+  fY = drawWrappedText(
+    amountWords,
+    margin + 5,
+    fY,
+    footerCol1W - 10,
+    8,
+    fontItalic,
+  );
 
-  page.drawText("Party Bank Details", { x: margin + 5, y: ty(footerY + 48), size: 8, font: fontBold });
-  page.drawText(`Bank: ${invoice.bankName || "—"}`, { x: margin + 5, y: ty(footerY + 58), size: 7, font });
-  page.drawText(`A/C No.: ${invoice.bankAc || "—"}`, { x: margin + 5, y: ty(footerY + 68), size: 7, font });
-  page.drawText(`IFSC: ${invoice.bankIfsc || "—"}`, { x: margin + 5, y: ty(footerY + 78), size: 7, font });
+  fY += 8;
+  drawText("Party Bank Details", margin + 5, fY, 8, fontBold);
+  fY += 12;
+  drawText(`Bank: ${invoice.bankName || "—"}`, margin + 5, fY, 7.5);
+  fY += 11;
+  drawText(`A/C No.: ${invoice.bankAc || "—"}`, margin + 5, fY, 7.5);
+  fY += 11;
+  drawText(`IFSC: ${invoice.bankIfsc || "—"}`, margin + 5, fY, 7.5);
 
-  // Signature
-  const sigX = margin + footerCol1Width + 5;
-  const forText = `for ${invoice.supplierName || ""}`;
-  const forWidth = font.widthOfTextAtSize(forText, 7);
-  page.drawText(forText, { x: margin + contentWidth - forWidth - 5, y: ty(footerY + 15), size: 7, font });
-  
-  const authText = "Authorised Signatory";
-  const authWidth = font.widthOfTextAtSize(authText, 8);
-  page.drawText(authText, { x: margin + contentWidth - authWidth - 5, y: ty(footerY + 75), size: 8, font });
+  // Right footer: for + signatory
+  const sig2X = margin + footerCol1W;
+  drawTextRight(
+    `for ${invoice.supplierName || ""}`,
+    sig2X,
+    footerCol2W - 5,
+    footerY + 14,
+    7.5,
+    font,
+  );
+  drawTextRight(
+    "Authorised Signatory",
+    sig2X,
+    footerCol2W - 5,
+    footerY + footerH - 10,
+    8,
+    font,
+  );
 
-  // Finalize
   const pdfBytes = await pdfDoc.save();
   return Buffer.from(pdfBytes);
 }
