@@ -18,7 +18,7 @@ export async function generateInvoicePDF(invoice: IInvoice): Promise<Buffer> {
   // Convert top-down Y to PDF bottom-up Y
   const ty = (y: number) => height - y;
 
-  // ── Clip-safe text draw: truncates text to fit within maxWidth ──
+  // ── Safe clipped text draw ──
   const drawText = (
     text: string,
     x: number,
@@ -37,44 +37,54 @@ export async function generateInvoicePDF(invoice: IInvoice): Promise<Buffer> {
       ) {
         str = str.slice(0, -1);
       }
+      if (str.length < text.length && str.length > 1)
+        str = str.slice(0, -1) + "…";
     }
     page.drawText(str, { x, y: ty(y), size, font: fontRef, color });
   };
 
-  // Right-aligned text within a cell
   const drawTextRight = (
     text: string,
     cellX: number,
-    cellWidth: number,
+    cellW: number,
     y: number,
     size: number,
     fontRef = font,
     color = rgb(0, 0, 0),
   ) => {
-    const tw = fontRef.widthOfTextAtSize(text, size);
-    const x = cellX + cellWidth - tw - 2;
-    page.drawText(text, { x, y: ty(y), size, font: fontRef, color });
+    if (!text) return;
+    let str = text;
+    while (str.length > 1 && fontRef.widthOfTextAtSize(str, size) > cellW - 4) {
+      str = str.slice(0, -1);
+    }
+    const tw = fontRef.widthOfTextAtSize(str, size);
+    page.drawText(str, {
+      x: cellX + cellW - tw - 2,
+      y: ty(y),
+      size,
+      font: fontRef,
+      color,
+    });
   };
 
-  // Center-aligned text within a cell
   const drawTextCenter = (
     text: string,
     cellX: number,
-    cellWidth: number,
+    cellW: number,
     y: number,
     size: number,
     fontRef = font,
   ) => {
+    if (!text) return;
     const tw = fontRef.widthOfTextAtSize(text, size);
     page.drawText(text, {
-      x: cellX + (cellWidth - tw) / 2,
+      x: cellX + (cellW - tw) / 2,
       y: ty(y),
       size,
       font: fontRef,
     });
   };
 
-  // Wrapped text – returns new Y after last line
   const drawWrappedText = (
     text: string,
     x: number,
@@ -102,7 +112,6 @@ export async function generateInvoicePDF(invoice: IInvoice): Promise<Buffer> {
     return y + size + lineGap;
   };
 
-  // Draw a filled+bordered rectangle
   const rect = (
     x: number,
     y: number,
@@ -121,8 +130,26 @@ export async function generateInvoicePDF(invoice: IInvoice): Promise<Buffer> {
     });
   };
 
+  const hLine = (x: number, y: number, w: number) => {
+    page.drawLine({
+      start: { x, y: ty(y) },
+      end: { x: x + w, y: ty(y) },
+      thickness: 0.4,
+      color: rgb(0.7, 0.7, 0.7),
+    });
+  };
+
+  const vLine = (x: number, y: number, h: number) => {
+    page.drawLine({
+      start: { x, y: ty(y) },
+      end: { x, y: ty(y + h) },
+      thickness: 0.4,
+      color: rgb(0.7, 0.7, 0.7),
+    });
+  };
+
   // ─────────────────────────────────────────────
-  // HEADER
+  // HEADER TITLE
   // ─────────────────────────────────────────────
   drawTextCenter("INVOICE", margin, contentWidth, 36, 14, fontBold);
 
@@ -132,7 +159,7 @@ export async function generateInvoicePDF(invoice: IInvoice): Promise<Buffer> {
   const topY = 48;
   const leftW = contentWidth * 0.56;
   const rightW = contentWidth - leftW;
-  const boxH = 100;
+  const boxH = 108; // 3 rows × 36px each
 
   rect(margin, topY, leftW, boxH);
   rect(margin + leftW, topY, rightW, boxH);
@@ -151,7 +178,6 @@ export async function generateInvoicePDF(invoice: IInvoice): Promise<Buffer> {
   ly += 13;
   drawWrappedText(invoice.companyAddr || "", margin + 5, ly, leftW - 10, 8);
   ly += 22;
-
   drawText(
     "Supplier (Bill from):",
     margin + 5,
@@ -179,13 +205,46 @@ export async function generateInvoicePDF(invoice: IInvoice): Promise<Buffer> {
     8,
   );
 
-  // RIGHT: Meta grid — 2 columns, 4 rows
+  // ── RIGHT META GRID ──
+  // 3 rows, each row has 2 sub-columns.
+  // Each sub-cell: label on top line, bold value on bottom line.
+  // This avoids any horizontal overflow between label and value.
   const rx = margin + leftW;
   const rPad = 5;
-  const labelW = 68;
-  const valX1 = rx + rPad + labelW;
-  const col2X = rx + rightW / 2;
-  const col2ValX = col2X + labelW - 20;
+  const metaRowH = boxH / 3; // 36px per row
+  const halfColW = rightW / 2;
+
+  // Internal grid lines
+  hLine(rx, topY + metaRowH, rightW);
+  hLine(rx, topY + metaRowH * 2, rightW);
+  vLine(rx + halfColW, topY, metaRowH);
+  vLine(rx + halfColW, topY + metaRowH, metaRowH);
+  vLine(rx + halfColW, topY + metaRowH * 2, metaRowH);
+
+  // Auto-build Supplier Inv Ref: "<invNo> Dt. <DD-MMM-YY>"
+  const buildSupplierInvRef = (): string => {
+    if (invoice.supplierInvRef && invoice.supplierInvRef.trim()) {
+      return invoice.supplierInvRef.trim();
+    }
+    const dateStr = formatDate(invoice.date); // "04-Apr-26"
+    return `${invoice.invNo} Dt. ${dateStr}`;
+  };
+
+  // Draw label (small, grey) on top line and value (bold) on bottom line within each cell
+  const drawMetaCell = (
+    label: string,
+    value: string,
+    cellX: number,
+    rowIndex: number,
+  ) => {
+    const rowStartY = topY + rowIndex * metaRowH;
+    const labelY = rowStartY + 10; // top line
+    const valueY = rowStartY + 23; // bottom line — plenty of vertical room
+    const maxW = halfColW - rPad * 2;
+
+    drawText(label, cellX + rPad, labelY, 7, font, rgb(0.35, 0.35, 0.35), maxW);
+    drawText(value, cellX + rPad, valueY, 8.5, fontBold, rgb(0, 0, 0), maxW);
+  };
 
   const metaRows: [string, string, string, string][] = [
     [
@@ -196,7 +255,7 @@ export async function generateInvoicePDF(invoice: IInvoice): Promise<Buffer> {
     ],
     [
       "Supplier Inv No.",
-      String(invoice.supplierInvRef || "—"),
+      buildSupplierInvRef(),
       "Other Ref",
       String(invoice.otherRef || "—"),
     ],
@@ -208,38 +267,16 @@ export async function generateInvoicePDF(invoice: IInvoice): Promise<Buffer> {
     ],
   ];
 
-  let ry = topY + 14;
-  for (const [l1, v1, l2, v2] of metaRows) {
-    drawText(l1 + ":", rx + rPad, ry, 7.5, font, rgb(0.3, 0.3, 0.3));
-    drawText(
-      v1,
-      valX1,
-      ry,
-      8,
-      fontBold,
-      rgb(0, 0, 0),
-      rightW / 2 - rPad - labelW - 2,
-    );
-    drawText(l2 + ":", col2X + rPad, ry, 7.5, font, rgb(0.3, 0.3, 0.3));
-    drawText(
-      v2,
-      col2ValX + rPad + 2,
-      ry,
-      8,
-      fontBold,
-      rgb(0, 0, 0),
-      rightW / 2 - rPad - labelW + 10,
-    );
-    ry += 26;
-  }
+  metaRows.forEach(([l1, v1, l2, v2], i) => {
+    drawMetaCell(l1, v1, rx, i); // left sub-cell
+    drawMetaCell(l2, v2, rx + halfColW, i); // right sub-cell
+  });
 
   // ─────────────────────────────────────────────
   // MAIN TABLE
   // ─────────────────────────────────────────────
   const tableTop = topY + boxH + 8;
 
-  // Column definitions: [label, width, align]
-  // Total must equal contentWidth (539 for margin=28)
   const cols: {
     label: string;
     width: number;
@@ -280,11 +317,11 @@ export async function generateInvoicePDF(invoice: IInvoice): Promise<Buffer> {
     cx += col.width;
   }
 
-  // Data values
+  // Data row
   const qtyVal = parseFloat(String(invoice.quantity || 0));
   const rateVal = parseFloat(String(invoice.rate || 0));
   const nwVal = parseFloat(String(invoice.netWeight || qtyVal || 0));
-  const fnqVal = parseFloat(String(invoice.finalNetQty || nwVal || 0));
+  const fnqVal = parseFloat(String((invoice as any).finalNetQty || nwVal || 0));
 
   const rowValues = [
     "1",
@@ -293,10 +330,10 @@ export async function generateInvoicePDF(invoice: IInvoice): Promise<Buffer> {
     qtyVal.toLocaleString("en-IN"),
     rateVal.toFixed(2),
     nwVal.toLocaleString("en-IN"),
-    String(invoice.standPercent || ""),
-    String(invoice.standDedQty || ""),
-    String(invoice.moisPercent || ""),
-    String(invoice.moisDedQty || ""),
+    String((invoice as any).standPercent || ""),
+    String((invoice as any).standDedQty || ""),
+    String((invoice as any).moisPercent || ""),
+    String((invoice as any).moisDedQty || ""),
     fnqVal.toLocaleString("en-IN"),
     fmt(invoice.gross),
   ];
@@ -309,7 +346,7 @@ export async function generateInvoicePDF(invoice: IInvoice): Promise<Buffer> {
     const textY = currentY + dataRowH - 7;
     const pad = 3;
     if (col.align === "right") {
-      drawTextRight(rowValues[i], cx, col.width - pad, textY, 8);
+      drawTextRight(rowValues[i], cx, col.width, textY, 8);
     } else if (col.align === "center") {
       drawTextCenter(rowValues[i], cx, col.width, textY, 8);
     } else {
@@ -354,7 +391,6 @@ export async function generateInvoicePDF(invoice: IInvoice): Promise<Buffer> {
           const textY = currentY + dedRowH - 5;
           const pad = 3;
           if (i === 1) {
-            // Description: italic red, left-aligned, clipped
             drawText(
               val,
               cx + pad,
@@ -365,12 +401,11 @@ export async function generateInvoicePDF(invoice: IInvoice): Promise<Buffer> {
               col.width - pad * 2,
             );
           } else if (i === 11) {
-            // Amount: right-aligned
-            drawTextRight(val, cx, col.width - pad, textY, 7.5, font);
+            drawTextRight(val, cx, col.width, textY, 7.5, font);
           } else if (col.align === "center") {
             drawTextCenter(val, cx, col.width, textY, 7.5);
           } else {
-            drawTextRight(val, cx, col.width - pad, textY, 7.5);
+            drawTextRight(val, cx, col.width, textY, 7.5);
           }
         }
         cx += col.width;
@@ -403,22 +438,22 @@ export async function generateInvoicePDF(invoice: IInvoice): Promise<Buffer> {
     const val = totalValues[i];
     if (val) {
       const textY = currentY + totalRowH - 8;
-      const innerPad = 3;
+      const pad = 3;
+      const maxW = col.width - pad * 2;
       if (i === 1) {
-        // "TOTAL" label — centred
         drawTextCenter(val, cx, col.width, textY, 8, fontBold);
-      } else if (col.align === "right" || col.align === "center") {
-        // Right-align numeric values, clipped to cell interior
-        const maxW = col.width - innerPad * 2;
-        const tw = fontBold.widthOfTextAtSize(val, 8);
-        const x = cx + col.width - Math.min(tw, maxW) - innerPad;
+      } else {
         let str = val;
         while (str.length > 1 && fontBold.widthOfTextAtSize(str, 8) > maxW) {
           str = str.slice(0, -1);
         }
-        page.drawText(str, { x, y: ty(textY), size: 8, font: fontBold });
-      } else {
-        drawTextCenter(val, cx, col.width, textY, 8, fontBold);
+        const tw = fontBold.widthOfTextAtSize(str, 8);
+        page.drawText(str, {
+          x: cx + col.width - tw - pad,
+          y: ty(textY),
+          size: 8,
+          font: fontBold,
+        });
       }
     }
     cx += col.width;
@@ -436,7 +471,6 @@ export async function generateInvoicePDF(invoice: IInvoice): Promise<Buffer> {
   rect(margin, footerY, footerCol1W, footerH);
   rect(margin + footerCol1W, footerY, footerCol2W, footerH);
 
-  // Left footer
   let fY = footerY + 12;
   drawText("Amount Chargeable (in words)", margin + 5, fY, 8, fontBold);
   fY += 13;
@@ -460,7 +494,6 @@ export async function generateInvoicePDF(invoice: IInvoice): Promise<Buffer> {
   fY += 11;
   drawText(`IFSC: ${invoice.bankIfsc || "—"}`, margin + 5, fY, 7.5);
 
-  // Right footer: for + signatory
   const sig2X = margin + footerCol1W;
   drawTextRight(
     `for ${invoice.supplierName || ""}`,
