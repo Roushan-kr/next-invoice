@@ -1,13 +1,13 @@
 # Invoice Manager — Next.js App
 
 ## Project Context
-This is a multi-user invoice manager built with Next.js (App Router), next-auth (Gmail OAuth), MongoDB, pdfkit, and vanilla CSS.
+This is a multi-user invoice manager built with Next.js (App Router), next-auth (Gmail OAuth), MongoDB, pdf-lib, and vanilla CSS.
 
 ## Architecture
 - **Auth**: Gmail OAuth via next-auth v4 + MongoDBAdapter
 - **Middleware**: Route protection for `/create` and `/view` via `middleware.ts`
 - **DB**: MongoDB — collections: `invoices`, `accounts`, `sessions`, `users`
-- **PDF**: pdfkit (server-side, on-the-fly, streamed — no external storage)
+- **PDF**: pdf-lib (server-side, on-the-fly, high performance — no external storage)
 - **Invoice IDs**: UUID v4 (uuid package)
 - **Styling**: Vanilla CSS (no Tailwind) — global CSS variables, glass-morphism
 - **User isolation**: Every API route checks `session.user.id === invoice.userId`
@@ -21,7 +21,7 @@ next-invoice/
 │   │   ├── invoices/
 │   │   │   ├── route.ts                  ← GET list, POST create
 │   │   │   ├── [id]/route.ts             ← GET, PUT, DELETE by UUID
-│   │   │   └── public/[invNo]/route.ts   ← Public PDF download (pdfkit)
+│   │   │   └── public/[invNo]/route.ts   ← Public PDF download (pdf-lib)
 │   ├── create/page.tsx                   ← Protected invoice form
 │   ├── view/page.tsx                     ← Protected records table
 │   ├── login/page.tsx                    ← Login page
@@ -31,7 +31,7 @@ next-invoice/
 ├── lib/
 │   ├── mongodb.ts                        ← MongoClient singleton
 │   ├── auth.ts                           ← NextAuth options (re-usable)
-│   ├── pdfGenerator.ts                   ← pdfkit invoice generator
+│   ├── pdfGenerator.ts                   ← pdf-lib invoice generator
 │   └── models/
 │       └── Invoice.ts                    ← TypeScript interfaces
 ├── components/

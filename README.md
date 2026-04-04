@@ -37,7 +37,7 @@ pnpm dev
 - **Gmail OAuth**: Secure login for multiple users.
 - **Data Isolation**: Users only see and manage their own invoices.
 - **UUID Identification**: Every invoice has a unique, secure UUID and a user-friendly invoice number.
-- **On-the-fly PDF**: Invoices are generated as PDFs using `pdfkit` (no external storage).
+- **On-the-fly PDF**: Invoices are generated as PDFs using `pdf-lib` (no external storage).
 - **Public Lookup**: Customers can retrieve PDFs by entering the Invoice Number and Date.
 - **Premium UI**: Replicated original glass-morphism design with vanilla CSS.
 
