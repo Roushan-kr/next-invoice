@@ -1,5 +1,3 @@
-// lib/pdfGenerator.ts
-
 import { PDFDocument, StandardFonts, rgb } from "pdf-lib";
 import { IInvoice } from "./models/Invoice";
 import { fmt, formatDate, numberToWords } from "./utils";
@@ -206,9 +204,6 @@ export async function generateInvoicePDF(invoice: IInvoice): Promise<Buffer> {
   );
 
   // ── RIGHT META GRID ──
-  // 3 rows, each row has 2 sub-columns.
-  // Each sub-cell: label on top line, bold value on bottom line.
-  // This avoids any horizontal overflow between label and value.
   const rx = margin + leftW;
   const rPad = 5;
   const metaRowH = boxH / 3; // 36px per row
@@ -238,8 +233,8 @@ export async function generateInvoicePDF(invoice: IInvoice): Promise<Buffer> {
     rowIndex: number,
   ) => {
     const rowStartY = topY + rowIndex * metaRowH;
-    const labelY = rowStartY + 10; // top line
-    const valueY = rowStartY + 23; // bottom line — plenty of vertical room
+    const labelY = rowStartY + 10;
+    const valueY = rowStartY + 23;
     const maxW = halfColW - rPad * 2;
 
     drawText(label, cellX + rPad, labelY, 7, font, rgb(0.35, 0.35, 0.35), maxW);
@@ -268,8 +263,8 @@ export async function generateInvoicePDF(invoice: IInvoice): Promise<Buffer> {
   ];
 
   metaRows.forEach(([l1, v1, l2, v2], i) => {
-    drawMetaCell(l1, v1, rx, i); // left sub-cell
-    drawMetaCell(l2, v2, rx + halfColW, i); // right sub-cell
+    drawMetaCell(l1, v1, rx, i);
+    drawMetaCell(l2, v2, rx + halfColW, i);
   });
 
   // ─────────────────────────────────────────────
@@ -317,12 +312,16 @@ export async function generateInvoicePDF(invoice: IInvoice): Promise<Buffer> {
     cx += col.width;
   }
 
-  // Data row
+  // Data row values
   const qtyVal = parseFloat(String(invoice.quantity || 0));
   const rateVal = parseFloat(String(invoice.rate || 0));
   const nwVal = parseFloat(String(invoice.netWeight || qtyVal || 0));
   const fnqVal = parseFloat(String((invoice as any).finalNetQty || nwVal || 0));
 
+  // ─────────────────────────────────────────────
+  // FIX 2: Amount = fnqVal * rateVal (Total × Rate)
+  // Previously used fmt(invoice.gross) which was incorrect
+  // ─────────────────────────────────────────────
   const rowValues = [
     "1",
     invoice.commodity || "",
@@ -335,7 +334,7 @@ export async function generateInvoicePDF(invoice: IInvoice): Promise<Buffer> {
     String((invoice as any).moisPercent || ""),
     String((invoice as any).moisDedQty || ""),
     fnqVal.toLocaleString("en-IN"),
-    fmt(invoice.gross),
+    fmt(fnqVal * rateVal), // ✅ FIXED: was fmt(invoice.gross)
   ];
 
   let currentY = tableTop + headerH;
@@ -368,19 +367,25 @@ export async function generateInvoicePDF(invoice: IInvoice): Promise<Buffer> {
   if (invoice.deductions && invoice.deductions.length > 0) {
     for (const d of invoice.deductions) {
       cx = margin;
+
+      // ─────────────────────────────────────────────
+      // FIX 1: bags moved from index 2 (Bag) to index 3 (Quantity)
+      // Previously: index 2 = bags, index 3 = null  ❌
+      // Now:        index 2 = null, index 3 = bags  ✅
+      // ─────────────────────────────────────────────
       const dedData: (string | null)[] = [
-        null,
-        "Less: " + (d.desc || ""),
-        d.bags != null ? String(d.bags) : null,
-        null,
-        d.rate != null ? String(d.rate) : null,
-        null,
-        null,
-        null,
-        null,
-        null,
-        null,
-        "(-) " + fmt(d.amt),
+        null,                                           // 0: SI No.
+        "Less: " + (d.desc || ""),                     // 1: Description
+        null,                                           // 2: Bag → empty ✅ FIXED
+        d.bags != null ? String(d.bags) : null,         // 3: Quantity ✅ FIXED
+        d.rate != null ? String(d.rate) : null,         // 4: Rate
+        null,                                           // 5: Net Weight
+        null,                                           // 6: Stand %
+        null,                                           // 7: Stand Ded.
+        null,                                           // 8: Mois. %
+        null,                                           // 9: Mois. Ded.
+        null,                                           // 10: Total
+        "(-) " + fmt(d.amt),                           // 11: Amount
       ];
 
       for (let i = 0; i < cols.length; i++) {
